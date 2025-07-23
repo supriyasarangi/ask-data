@@ -7,8 +7,7 @@ This is a Streamlit-based application that allows you to interact with the conte
 ## 🖼️ Screenshots
 
 ### 📄 Upload PDF and Ask Questions  
-![Upload PDF](screenshots/dark_mode_web_app.png)
-<!-- ![Accessible on Mobile](screenshots/light_mode_mobile_app.png) -->
+![Upload PDF](screenshots/final_design.png)
 
 ---
 
@@ -18,6 +17,9 @@ This is a Streamlit-based application that allows you to interact with the conte
 - 🤖 Ask questions in natural language.
 - 🧠 Uses `HuggingFaceEmbeddings` + `Chroma` vector store for semantic search.
 - ⚡ Powered by **Groq-hosted** LLaMA3 or Mixtral for fast, high-quality LLM responses.
+- 🗂️ Chat history accessible via a sidebar button for easy reference.
+- 💬 Dynamic multi-message interface like ChatGPT (new input box appears after each question).
+
 
 ---
 
