@@ -2,6 +2,8 @@
 
 This is a Streamlit-based application that allows you to interact with the content of **PDF documents** using **natural language queries**. It leverages **LangChain**, **HuggingFace embeddings**, and **Groq-hosted LLaMA3** or **Mixtral** models to provide intelligent answers based on your uploaded PDF.
 
+It also supports multiple conversations based on browser session history management
+
 ---
 
 ## 🖼️ Screenshots
@@ -26,6 +28,7 @@ This is a Streamlit-based application that allows you to interact with the conte
 ## 🧰 Tech Stack
 
 - Python
+- RAG
 - Streamlit
 - LangChain
 - HuggingFace Transformers
@@ -59,10 +62,3 @@ Create a .env file in the root folder and add your Groq API key:
     ```bash
     streamlit run app.py
 ---
-
-## 💡 Future Improvements
-
-- Add support for CSV and TXT file types.
-- Display source document snippets along with the answer.
-- Add conversational memory for multi-turn interaction.
-- Export Q&A history.
