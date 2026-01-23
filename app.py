@@ -1,143 +1,138 @@
 from dotenv import load_dotenv
-import os
-import uuid
 import streamlit as st
-from PyPDF2 import PdfReader
 
-from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-
-from langchain_community.chat_models import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
+from conversation import init_session_state
+from pdf_utils import build_knowledge_base
+from rag_chain import create_rag_chain
+from follow_up import generate_followups
 
 load_dotenv()
 
-
-def create_new_conversation():
-    return {
-        "messages": [],
-        "memory": ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        ),
-        "knowledge_base": None,
-        "pdf_name": None,
-    }
+st.set_page_config(page_title="Ask-Data", page_icon="🤖")
+st.header("Ask-Data 🤖💬")
 
 
-def main():
-    st.set_page_config(page_title="Chat with PDF", page_icon="🤖")
-    st.header("Chat with your PDF 🤖💬")
-
-    # ----------------------------
-    # Initialize conversations
-    # ----------------------------
-    if "conversations" not in st.session_state:
-        st.session_state.conversations = {}
-
-    if "current_session_id" not in st.session_state:
-        session_id = str(uuid.uuid4())
-        st.session_state.current_session_id = session_id
-        st.session_state.conversations[session_id] = create_new_conversation()
-
-    current = st.session_state.conversations[
-        st.session_state.current_session_id
-    ]
-
-    # ----------------------------
-    # Sidebar: conversation switch
-    # ----------------------------
-    with st.sidebar:
-        st.subheader("💬 Conversations")
-
-        if st.button("➕ New Chat"):
-            session_id = str(uuid.uuid4())
-            st.session_state.current_session_id = session_id
-            st.session_state.conversations[session_id] = create_new_conversation()
-            st.rerun()
-
-        st.divider()
-
-        for sid, convo in st.session_state.conversations.items():
-            label = convo["pdf_name"] or f"Chat {sid[:6]}"
-            if st.button(label, key=f"chat_btn_{sid}"):
-                st.session_state.current_session_id = sid
-                st.rerun()
-
-    # ----------------------------
-    # PDF upload (per conversation)
-    # ----------------------------
-    pdf = st.file_uploader(
-        "Upload a PDF for this conversation",
-        type="pdf",
-        key=f"uploader_{st.session_state.current_session_id}"
+def scroll_to_bottom():
+    st.markdown(
+        """
+        <div id="bottom"></div>
+        <script>
+            document.getElementById("bottom").scrollIntoView({behavior: "smooth"});
+        </script>
+        """,
+        unsafe_allow_html=True,
     )
 
-    if pdf is not None and current["knowledge_base"] is None:
-        current["pdf_name"] = pdf.name
 
-        pdf_reader = PdfReader(pdf)
-        text = "".join(page.extract_text() for page in pdf_reader.pages)
+# ----------------------------
+# Session init
+# ----------------------------
+current = init_session_state(st)
 
-        text_splitter = CharacterTextSplitter(
-            separator="\n",
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len,
-        )
-        chunks = text_splitter.split_text(text)
+# ----------------------------
+# Sidebar
+# ----------------------------
+with st.sidebar:
+    st.subheader("💬 Conversations")
 
-        embeddings = HuggingFaceEmbeddings()
-        current["knowledge_base"] = Chroma.from_texts(chunks, embeddings)
+    if st.button("➕ New Chat"):
+        from conversation import create_new_conversation
+        import uuid
 
-    # ----------------------------
-    # Render chat history
-    # ----------------------------
-    for msg in current["messages"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        sid = str(uuid.uuid4())
+        st.session_state.current_session_id = sid
+        st.session_state.conversations[sid] = create_new_conversation()
+        st.rerun()
 
-    # ----------------------------
-    # Chat input + RAG
-    # ----------------------------
-    if current["knowledge_base"]:
-        user_input = st.chat_input("Ask a question about your PDF...")
+    st.divider()
 
-        if user_input:
-            current["messages"].append(
-                {"role": "user", "content": user_input}
-            )
-            with st.chat_message("user"):
-                st.markdown(user_input)
+    for sid, convo in st.session_state.conversations.items():
+        label = convo["pdf_name"] or f"Chat {sid[:6]}"
+        if st.button(label, key=f"chat_btn_{sid}"):
+            st.session_state.current_session_id = sid
+            st.rerun()
 
-            llm = ChatOpenAI(
-                base_url="https://api.groq.com/openai/v1",
-                api_key=os.getenv("GROQ_API_KEY"),
-                model="llama-3.1-8b-instant",
-                temperature=0,
-            )
+# ----------------------------
+# PDF upload
+# ----------------------------
+pdf = st.file_uploader(
+    "Upload a PDF for this conversation",
+    type="pdf",
+    key=f"uploader_{st.session_state.current_session_id}"
+)
 
-            qa_chain = ConversationalRetrievalChain.from_llm(
-                llm=llm,
-                retriever=current["knowledge_base"].as_retriever(),
-                memory=current["memory"]
-            )
+if pdf and current["knowledge_base"] is None:
+    current["pdf_name"] = pdf.name
+    current["knowledge_base"] = build_knowledge_base(pdf)
 
-            result = qa_chain({"question": user_input})
-            response = result["answer"]
+# ----------------------------
+# Render chat history
+# ----------------------------
+for msg in current["messages"]:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-            with st.chat_message("assistant"):
-                st.markdown(response)
+# ----------------------------
+# Resolve input
+# ----------------------------
+# Always show input if knowledge base exists
+user_input = None
 
-            current["messages"].append(
-                {"role": "assistant", "content": response}
-            )
+typed_input = None
+if current["knowledge_base"]:
+    typed_input = st.chat_input("Ask a question about your PDF...")
 
-    else:
-        st.info("📄 Upload a PDF to start chatting")
+if st.session_state.pending_followup:
+    user_input = st.session_state.pending_followup
+    st.session_state.pending_followup = None
+elif typed_input:
+    user_input = typed_input
 
+# ----------------------------
+# RAG execution
+# ----------------------------
+if user_input:
+    current["messages"].append({"role": "user", "content": user_input})
 
-if __name__ == "__main__":
-    main()
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    llm, chain = create_rag_chain(
+        current["knowledge_base"],
+        current["memory"]
+    )
+
+    result = chain({"question": user_input})
+    response = result["answer"]
+
+    with st.chat_message("assistant"):
+        st.markdown(response)
+
+    scroll_to_bottom()
+
+    current["messages"].append(
+        {"role": "assistant", "content": response}
+    )
+
+    try:
+        current["followups"] = generate_followups(llm, response)[:3]
+    except Exception:
+        current["followups"] = []
+
+# ----------------------------
+# Follow-ups (after answer)
+# ----------------------------
+if current.get("followups"):
+    st.markdown("**Suggested follow-ups:**")
+    cols = st.columns(len(current["followups"]))
+
+    for i, q in enumerate(current["followups"]):
+        if cols[i].button(
+                q,
+                key=f"followup_{st.session_state.current_session_id}_{i}"
+        ):
+            st.session_state.pending_followup = q
+            current["followups"] = []
+
+if not current["knowledge_base"]:
+    st.info("📄 Upload a PDF to start chatting")
